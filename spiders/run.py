@@ -9,7 +9,7 @@ import urllib.parse
 
 
 class Qo10Spider(scrapy.Spider):
-    name = 'fuk'
+    name = 'spy'
     #allowed_domains = ['www.qoo10.sg']
     start_urls = [
         #'https://www.qoo10.sg/shop/andystrip'
