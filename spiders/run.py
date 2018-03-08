@@ -50,84 +50,100 @@ class Qo10Spider(scrapy.Spider):
 
     def parse_product_page(self, response):
 
+  
+        def _get_price(response):
+            '''
+            Returns retail_price, q_price and discount_price of each item
+            '''
+            groupbuy = response.css('div[class="goods_type"]').extract_first()
+            if groupbuy is None:
+                retail_price = response.css(
+                    '#ctl00_ctl00_MainContentHolder_MainContentHolderNoForm_retailPricePanel > dl > dd::text').extract()
+                q_price = response.css('#dl_sell_price > dd > strong::text').extract()
+                discount_price = response.css(
+                    '#ctl00_ctl00_MainContentHolder_MainContentHolderNoForm_discount_info > dl > dd > strong::text').extract()
+            else:
+                retail_price = response.css('#goodsForm > div.goodsDetailWrap > div.goods_info > div.goods_detail > div.grpbuy_area > div.prc > del::text').extract_first()
+                discount_price = response.css('#goodsForm > div.goodsDetailWrap > div.goods_info > div.goods_detail > div.grpbuy_area > div.prc > strong::text').extract_first()
+                q_price = None
+                
+            return retail_price, q_price, discount_price
+            
+        
+
+        def _retrieve_variation_table(response):
+            '''
+            Returns variation table of each product 
+            '''
+            id = response.css('#gd_no::attr(value)').extract()[0]
+            referer = response.css('link[rel="canonical"]::attr(href)').extract_first()
+            #referer = "https://www.qoo10.sg/item/2018-NEW-ARRIVAL-WINTER-SWEATER-THERMAL-JACKET-KOREAN-VERSION/432028114"
+
+            search_request = {"inventory_no": "ST" + str(id), "lang_cd": "en", "inventory_yn": "",
+                              "link_type": "N",
+                              "gd_no": str(id), "global_order_type": "L",
+                              "___cache_expire___": "1513939702435"}
+            
+            payload = json.dumps(search_request)
+
+            r = requests.post(
+                # url='http://list.qoo10.sg/gmkt.inc/swe_GoodsAjaxService.asmx/GetGoodsInventoryAvailableList',
+                url='https://www.qoo10.sg/gmkt.inc/swe_GoodsAjaxService.asmx/GetGoodsInventoryAvailableList',
+                data=payload,
+                headers={  # 'Accept-Encoding': 'gzip, deflate',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    # 'Accept-Language': 'en-US,en;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Connection': 'keep-alive',
+                    'Content-Type': 'application/json',
+                    # 'Host': 'list.qoo10.sg',
+                    'Host': 'www.qoo10.sg',
+                    # 'Origin': 'http://list.qoo10.sg',
+                    'Origin': 'https://www.qoo10.sg',
+                    'Referer': referer,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'
+                    # 'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36'
+                }
+
+            )
+            jsonresponse = r.json()
+            variation = jsonresponse["d"]["Rows"]
+            
+            return variation
+
+        def _get_description(response):
+            '''
+            Returns the following:
+            info: string containing the item description
+            img: list containing strings of img urls
+            '''
+            body = response.text
+            contents_no = re.findall(r"contents_no=([0-9]*?)&", body)[0]
+
+            desc_url = 'https://www.qoo10.sg/gmkt.inc/Goods/GoodsDetailInfo.aspx?contents_no={0}&goodscode={1}&global_order_type=L&org_des=N'.format(contents_no,id)
+            desc = requests.get(desc_url).text
+            
+            #Get info
+            info_1 = Selector(text=desc).css('span::text').extract()
+            info_2 = Selector(text=desc).css('div::text').extract()
+            info = info_1 + info_2
+            s = " "
+            info = s.join(info)
+
+            #Get images
+            img = Selector(text=desc).css('img::attr(src)').extract()
+
+            return info, img
+
+        
+        #initialize distionary
         product_dict = {}
 
-
-        #Get price
-        groupbuy = response.css('div[class="goods_type"]').extract_first()
-        if groupbuy is None:
-            retail_price = response.css(
-                '#ctl00_ctl00_MainContentHolder_MainContentHolderNoForm_retailPricePanel > dl > dd::text').extract()
-            q_price = response.css('#dl_sell_price > dd > strong::text').extract()
-            discount_price = response.css(
-                '#ctl00_ctl00_MainContentHolder_MainContentHolderNoForm_discount_info > dl > dd > strong::text').extract()
-        else:
-            retail_price = response.css('#goodsForm > div.goodsDetailWrap > div.goods_info > div.goods_detail > div.grpbuy_area > div.prc > del::text').extract_first()
-            discount_price = response.css('#goodsForm > div.goodsDetailWrap > div.goods_info > div.goods_detail > div.grpbuy_area > div.prc > strong::text').extract_first()
-            q_price = None
-
-
-
-        #-----------------------------Get table-------------------------
-
-        id = response.css('#gd_no::attr(value)').extract()[0]
-        referer = response.css('link[rel="canonical"]::attr(href)').extract_first()
-        #referer = "https://www.qoo10.sg/item/2018-NEW-ARRIVAL-WINTER-SWEATER-THERMAL-JACKET-KOREAN-VERSION/432028114"
-
-        search_request = {"inventory_no": "ST" + str(id), "lang_cd": "en", "inventory_yn": "",
-                          "link_type": "N",
-                          "gd_no": str(id), "global_order_type": "L",
-                          "___cache_expire___": "1513939702435"}
-        payload = json.dumps(search_request)
-
-        r = requests.post(
-            # url='http://list.qoo10.sg/gmkt.inc/swe_GoodsAjaxService.asmx/GetGoodsInventoryAvailableList',
-            url='https://www.qoo10.sg/gmkt.inc/swe_GoodsAjaxService.asmx/GetGoodsInventoryAvailableList',
-            data=payload,
-            headers={  # 'Accept-Encoding': 'gzip, deflate',
-                'Accept-Encoding': 'gzip, deflate, br',
-                # 'Accept-Language': 'en-US,en;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Connection': 'keep-alive',
-                'Content-Type': 'application/json',
-                # 'Host': 'list.qoo10.sg',
-                'Host': 'www.qoo10.sg',
-                # 'Origin': 'http://list.qoo10.sg',
-                'Origin': 'https://www.qoo10.sg',
-                'Referer': referer,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36'
-                # 'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36'
-            }
-
-        )
-        jsonresponse = r.json()
-        variation = jsonresponse["d"]["Rows"]
-        #-----------------------End of getting table--------------------
-
-        #------------------------Get Description ---------------------------
-
-        body = response.text
-        contents_no = re.findall(r"contents_no=([0-9]*?)&", body)[0]
-
-
-        desc_url = 'https://www.qoo10.sg/gmkt.inc/Goods/GoodsDetailInfo.aspx?contents_no={0}&goodscode={1}&global_order_type=L&org_des=N'.format(contents_no,id)
-        desc = requests.get(desc_url).text
-
-        #Get text
-        info_1 = Selector(text=desc).css('span::text').extract()
-        info_2 = Selector(text=desc).css('div::text').extract()
-        info = info_1 + info_2
-        s = " "
-        info = s.join(info)
-
-        #Get images
-        img = Selector(text=desc).css('img::attr(src)').extract()
-        count = list(range(1, 10))
-        #count = list(range(1, len(img) + 1))
-
-
-
-
+        #Populate dictionary
+        variation = _retrieve_variation_table(response)
+        retail_price, q_price, discount_price = _get_price(response)
+        info, img = _get_description(response)
+        
         for model in variation:
 
             product_dict["SKU ID"] = response.css('#gd_no::attr(value)').extract()
@@ -155,11 +171,13 @@ class Qo10Spider(scrapy.Spider):
             product_dict["Quantity"] = model["remain_cnt"]
             product_dict["Additional Price"] = model["sel_item_price"]
 
-            #Grab all desc images
-            for i, j in zip(count, img):
+            #Grab first 10 desc images
+            for i, j in zip(range(10), img):
                 product_dict['Image_{}'.format(i)] = j
 
-            yield product_dict
+        yield product_dict
+
+
 
 
 
